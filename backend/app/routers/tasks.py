@@ -1,12 +1,15 @@
+from ..database import SessionLocal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from datetime import date
-from ..database import SessionLocal
-from .. import models, schemas
-from ..utils.email_service import send_email
-from typing import Optional
+from typing import List, Optional
+from datetime import date, datetime, timezone
 from sqlalchemy import or_
+import pandas as pd
+from fastapi.responses import FileResponse
+import os
 
+from app import models, schemas
+from app.models import TaskStatusEnum
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
@@ -17,79 +20,193 @@ def get_db():
     finally:
         db.close()
 
-@router.post("/")
+@router.post("/create", response_model=schemas.TaskOut)
 def create_task(task: schemas.TaskCreate, db: Session = Depends(get_db)):
     today = date.today()
-    task_date = task.date or today
+    is_backdated = task.date != today
 
-    # Check backdated entries (if not today)
-    if task_date != today:
-        user_task_count = db.query(models.Task).filter(
+    # Enforce backdated count logic if applicable
+    if is_backdated:
+        first_day = today.replace(day=1)
+        count = db.query(models.Task).filter(
             models.Task.user_id == task.user_id,
-            models.Task.date != today
+            models.Task.date >= first_day,
+            models.Task.date < today,
+            models.Task.is_backdated == True
         ).count()
-        if user_task_count >= 5:
-            raise HTTPException(status_code=400, detail="Max 5 backdated entries allowed")
+        if count >= 5:
+            raise HTTPException(status_code=400, detail="Max 5 backdated tasks allowed this month.")
 
-    db_task = models.Task(**task.dict(), date=task_date)
-    db.add(db_task)
+    # Decide status
+    status = TaskStatusEnum.ToBeApproved if is_backdated else TaskStatusEnum.InProgress
+
+    # Clean the incoming data
+    task_data = task.dict()
+    task_data.pop("is_backdated", None)  # avoid conflict
+    task_data.pop("is_approved", None)   # we'll control this
+    task_data["status"] = status
+    task_data["is_backdated"] = is_backdated
+    task_data["is_approved"] = False
+
+    new_task = models.Task(**task_data)
+    db.add(new_task)
     db.commit()
-    db.refresh(db_task)
+    db.refresh(new_task)
+    return new_task
 
-    # Email manager for backdated
-    if task_date != today:
-        user = db.query(models.User).filter(models.User.id == task.user_id).first()
-        mgr = db.query(models.User).filter(models.User.name == user.reporting_manager).first()
-        if mgr and mgr.email:
-            send_email(
-                subject="Backdated Task Approval Needed",
-                body=f"User {user.name} added a backdated task for {task_date}. Please review.",
-                to=mgr.email
-            )
+@router.put("/{task_id}/complete", response_model=schemas.TaskOut)
+def complete_task(
+    task_id: int,
+    end_time: Optional[datetime] = None,
+    db: Session = Depends(get_db)
+):
+    task = db.query(models.Task).filter(models.Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
 
-    return db_task
+    if task.status != TaskStatusEnum.InProgress:
+        raise HTTPException(status_code=400, detail="Only 'In Progress' tasks can be completed")
 
-@router.get("/")
-def list_tasks(user_id: int = None, db: Session = Depends(get_db)):
-    query = db.query(models.Task)
-    if user_id:
-        query = query.filter(models.Task.user_id == user_id)
-    return query.all()
+    final_end_time = end_time or datetime.now(timezone.utc)
 
-@router.get("/")
+    task.end_time = final_end_time
+    task.status = TaskStatusEnum.Done
+    db.commit()
+    db.refresh(task)
+    return task
+
+@router.post("/", response_model=List[schemas.TaskOut])
 def list_tasks(
+    filters: schemas.TaskFilterRequest,
     db: Session = Depends(get_db),
-    user_id: Optional[int] = None,
-    project_id: Optional[int] = None,
-    from_date: Optional[date] = None,
-    to_date: Optional[date] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1),
     search: Optional[str] = None,
-    page: int = Query(1, gt=0),
-    page_size: int = Query(10, gt=0)
 ):
     query = db.query(models.Task)
 
-    # Filters
-    if user_id:
-        query = query.filter(models.Task.user_id == user_id)
-    if project_id:
-        query = query.filter(models.Task.project_id == project_id)
-    if from_date and to_date:
-        query = query.filter(models.Task.date.between(from_date, to_date))
+    # Filter logic
+    if filters.user_id:
+        query = query.filter(models.Task.user_id == filters.user_id)
+    if filters.project_id:
+        query = query.filter(models.Task.project_id == filters.project_id)
+    if filters.task_type:
+        query = query.filter(models.Task.task_type == filters.task_type)
+    if filters.status:
+        query = query.filter(models.Task.status == filters.status)
+    if filters.from_date and filters.to_date:
+        query = query.filter(models.Task.date.between(filters.from_date, filters.to_date))
     if search:
         query = query.filter(
             or_(
-                models.Task.title.ilike(f"%{search}%"),
-                models.Task.details.ilike(f"%{search}%")
+                models.Task.task_title.ilike(f"%{search}%"),
+                models.Task.task_details.ilike(f"%{search}%")
             )
         )
 
-    total = query.count()
-    tasks = query.order_by(models.Task.date.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    if filters.only_backdated:
+        query = query.filter(models.Task.is_backdated == True)
 
-    return {
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "tasks": tasks
-    }
+        if not filters.show_all_backdated:
+            query = query.filter(models.Task.is_approved == False)
+
+        if filters.filter_backdated_by_creator_type == "own" and filters.user_id:
+            query = query.filter(models.Task.user_id == models.Task.created_by)
+        elif filters.filter_backdated_by_creator_type == "manager" and filters.user_id:
+            query = query.filter(models.Task.user_id != models.Task.created_by)
+
+    else:
+        query = query.filter(
+            or_(
+                models.Task.is_backdated == False,
+                models.Task.is_approved == True
+            )
+        )
+
+    query = query.order_by(models.Task.start_time.desc())
+    return query.offset((page - 1) * page_size).limit(page_size).all()
+
+
+@router.post("/download")
+def download_tasks(
+    filters: schemas.TaskFilterRequest,
+    db: Session = Depends(get_db),
+    search: Optional[str] = None,
+):
+    query = db.query(models.Task)
+
+    if filters.user_id:
+        query = query.filter(models.Task.user_id == filters.user_id)
+    if filters.project_id:
+        query = query.filter(models.Task.project_id == filters.project_id)
+    if filters.task_type:
+        query = query.filter(models.Task.task_type == filters.task_type)
+    if filters.status:
+        query = query.filter(models.Task.status == filters.status)
+    if filters.from_date and filters.to_date:
+        query = query.filter(models.Task.date.between(filters.from_date, filters.to_date))
+    if search:
+        query = query.filter(
+            or_(
+                models.Task.task_title.ilike(f"%{search}%"),
+                models.Task.task_details.ilike(f"%{search}%")
+            )
+        )
+
+    if filters.only_backdated:
+        query = query.filter(models.Task.is_backdated == True)
+
+        if not filters.show_all_backdated:
+            query = query.filter(models.Task.is_approved == False)
+
+        if filters.filter_backdated_by_creator_type == "own" and filters.user_id:
+            query = query.filter(models.Task.user_id == models.Task.created_by)
+        elif filters.filter_backdated_by_creator_type == "manager" and filters.user_id:
+            query = query.filter(models.Task.user_id != models.Task.created_by)
+
+    else:
+        query = query.filter(
+            or_(
+                models.Task.is_backdated == False,
+                models.Task.is_approved == True
+            )
+        )
+
+    query = query.order_by(models.Task.start_time.desc())
+
+    tasks = query.all()
+    data = [{
+        "User ID": t.user_id,
+        "Created By": t.created_by,
+        "Project ID": t.project_id,
+        "Date": t.date,
+        "Title": t.task_title,
+        "Details": t.task_details,
+        "Start Time": t.start_time,
+        "End Time": t.end_time,
+        "Task Type": t.task_type,
+        "Status": t.status,
+        "Backdated": t.is_backdated,
+        "Approved": t.is_approved,
+    } for t in tasks]
+
+    filename = f"/tmp/tasks_{datetime.now().timestamp()}.xlsx"
+    pd.DataFrame(data).to_excel(filename, index=False)
+
+    return FileResponse(path=filename, filename="tasks.xlsx", media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+0
+@router.put("/{task_id}/approve", response_model=schemas.TaskOut)
+def approve_task(task_id: int, db: Session = Depends(get_db)):
+    task = db.query(models.Task).filter(models.Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    if task.status != TaskStatusEnum.ToBeApproved:
+        raise HTTPException(status_code=400, detail="Only tasks in 'To Be Approved' status can be approved")
+
+    task.status = TaskStatusEnum.Approved
+    task.is_approved = True
+    db.commit()
+    db.refresh(task)
+    return task
