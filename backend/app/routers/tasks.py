@@ -69,11 +69,19 @@ def complete_task(
 
     final_end_time = end_time or datetime.now(timezone.utc)
 
+    if final_end_time < task.start_time:
+        raise HTTPException(status_code=400, detail="End time cannot be before start time")
+
+    # Calculate total time in minutes
+    total_time = (final_end_time - task.start_time).total_seconds() / 60
+
     task.end_time = final_end_time
     task.status = TaskStatusEnum.Done
+    task.total_time_minutes = round(total_time, 2)
     db.commit()
     db.refresh(task)
     return task
+
 
 @router.post("/", response_model=List[schemas.TaskOut])
 def list_tasks(
@@ -188,6 +196,7 @@ def download_tasks(
         "Status": t.status,
         "Backdated": t.is_backdated,
         "Approved": t.is_approved,
+        "Total Time (minutes)": t.total_time_minutes,
     } for t in tasks]
 
     filename = f"/tmp/tasks_{datetime.now().timestamp()}.xlsx"

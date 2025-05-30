@@ -4,6 +4,18 @@ from datetime import date, time, datetime
 from enum import Enum
 from app.models import TaskTypeEnum, TaskStatusEnum
 
+
+# Login Schemas
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+    user: dict
+
+
 # User Schemas
 class RoleEnum(str, Enum):
     Admin = "Admin"
@@ -97,6 +109,7 @@ class TaskUpdate(BaseModel):
 class TaskOut(TaskBase):
     id: int
     status: TaskStatusEnum
+    total_time_minutes: Optional[float] = None
 
     class Config:
         orm_mode = True

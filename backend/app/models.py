@@ -1,5 +1,5 @@
 from app.utils.timestamp import TimestampMixin
-from sqlalchemy import Column, Integer, String, ForeignKey, Boolean, Date, Time, Enum, Text, DateTime
+from sqlalchemy import Column, Integer, String, ForeignKey, Boolean, Date, Time, Enum, Text, DateTime, Float
 from sqlalchemy.orm import relationship
 from .database import Base
 import enum
@@ -76,6 +76,7 @@ class Task(Base, TimestampMixin):
     task_details = Column(String(256), nullable=True)
     start_time = Column(DateTime, nullable=False)
     end_time = Column(DateTime, nullable=True)
+    total_time_minutes = Column(Float, nullable=True)
     task_type = Column(Enum(TaskTypeEnum), nullable=False)
     reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     status = Column(Enum(TaskStatusEnum), nullable=True)

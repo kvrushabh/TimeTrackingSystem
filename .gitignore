@@ -1,0 +1,87 @@
+# Python stuff (FastAPI backend)
+
+backend/**/__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.env
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+*.sqlite3
+*.db
+*.log
+*.pot
+
+# VSCode settings
+.vscode/
+
+# Python bytecode cache
+*.pyc
+
+# pytest cache
+.pytest_cache/
+
+# mypy cache
+.mypy_cache/
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# FastAPI specific
+# If you use migrations (like Alembic)
+alembic.ini
+alembic/
+
+# React stuff (frontend)
+
+node_modules/
+npm-debug.log*
+yarn-error.log*
+yarn-debug.log*
+build/
+dist/
+*.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# misc
+.DS_Store
+
+# Logs
+logs
+*.log
+
+# Optional coverage reports
+coverage/
+htmlcov/
+
+# JetBrains IDEs
+.idea/
+
+# MacOS
+.DS_Store
+
+# React/Vite specific
+.vite/
