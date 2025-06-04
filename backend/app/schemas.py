@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional, Literal
-from datetime import date, time, datetime
+from datetime import date, datetime
 from enum import Enum
 from app.models import TaskTypeEnum, TaskStatusEnum
 
@@ -10,13 +10,14 @@ class LoginRequest(BaseModel):
     username: str
     password: str
 
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str
     user: dict
 
 
-# User Schemas
+# Enums
 class RoleEnum(str, Enum):
     Admin = "Admin"
     Employee = "Employee"
@@ -24,12 +25,15 @@ class RoleEnum(str, Enum):
     Manager = "Manager"
     Management = "Management"
 
+
 class DepartmentEnum(str, Enum):
     HR = "HR"
     QA = "QA"
     IT = "IT - SOFTWARE"
     GRAPHICS = "GRAPHICS"
 
+
+# User Schemas
 class UserBase(BaseModel):
     EmpCode: Optional[str] = None
     name: str
@@ -40,8 +44,10 @@ class UserBase(BaseModel):
     role: RoleEnum
     is_active: bool
 
+
 class UserCreate(UserBase):
     password: str
+
 
 class UserUpdate(BaseModel):
     name: Optional[str]
@@ -52,8 +58,18 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool]
     password: Optional[str]
 
+
 class UserOut(UserBase):
     id: int
+
+    class Config:
+        orm_mode = True
+
+
+class SimpleUser(BaseModel):
+    id: int
+    name: str
+
     class Config:
         orm_mode = True
 
@@ -65,8 +81,10 @@ class ProjectBase(BaseModel):
     project_description: Optional[str] = None
     is_active: bool = True
 
+
 class ProjectCreate(ProjectBase):
     pass
+
 
 class ProjectUpdate(BaseModel):
     project_code: Optional[str] = None
@@ -74,8 +92,10 @@ class ProjectUpdate(BaseModel):
     project_description: Optional[str] = None
     is_active: Optional[bool] = None
 
+
 class ProjectOut(ProjectBase):
     id: int
+
     class Config:
         orm_mode = True
 
@@ -95,8 +115,10 @@ class TaskBase(BaseModel):
     is_approved: bool = False
     created_by: int
 
+
 class TaskCreate(TaskBase):
     pass
+
 
 class TaskUpdate(BaseModel):
     end_time: Optional[datetime] = None
@@ -106,10 +128,15 @@ class TaskUpdate(BaseModel):
     reviewer_id: Optional[int] = None
     task_type: Optional[TaskTypeEnum] = None
 
+
 class TaskOut(TaskBase):
     id: int
     status: TaskStatusEnum
     total_time_minutes: Optional[float] = None
+
+    # Extra fields for display in frontend
+    project_name: Optional[str] = None
+    reviewer_name: Optional[str] = None
 
     class Config:
         orm_mode = True
@@ -124,9 +151,5 @@ class TaskFilterRequest(BaseModel):
     from_date: Optional[date] = None
     to_date: Optional[date] = None
 
-    # boolean fields optional
     only_backdated: Optional[bool] = False
-    show_all_backdated: Optional[bool] = False
-
-    # Enum-like string to handle creator filter
     filter_backdated_by_creator_type: Optional[Literal["own", "manager", "all"]] = "all"

@@ -6,12 +6,12 @@ load_dotenv()
 class Settings:
     DATABASE_URL = os.getenv("DATABASE_URL")
     EMAIL_HOST = os.getenv("EMAIL_HOST")
-    EMAIL_PORT = int(os.getenv("EMAIL_PORT"))
+    EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
     EMAIL_USER = os.getenv("EMAIL_USER")
     EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
-    JWT_SECRET_KEY= os.getenv("JWT_SECRET_KEY")
-    JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRE_MINUTES: int = 60
-
 
 settings = Settings()
+
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", 60))
