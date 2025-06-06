@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import Optional, Literal
 from datetime import date, datetime
 from enum import Enum
@@ -35,14 +35,15 @@ class DepartmentEnum(str, Enum):
 
 # User Schemas
 class UserBase(BaseModel):
-    EmpCode: Optional[str] = None
     name: str
     username: str
+    email: EmailStr
     department: DepartmentEnum
     reporting_manager: Optional[int] = None
-    TL: Optional[int] = None
+    tl: Optional[int] = None
     role: RoleEnum
-    is_active: bool
+    is_active: bool = True
+    employee_code: Optional[str] = None
 
 
 class UserCreate(UserBase):
@@ -53,7 +54,7 @@ class UserUpdate(BaseModel):
     name: Optional[str]
     department: Optional[DepartmentEnum]
     reporting_manager: Optional[int]
-    TL: Optional[int]
+    tl: Optional[int]
     role: Optional[RoleEnum]
     is_active: Optional[bool]
     password: Optional[str]
@@ -61,17 +62,19 @@ class UserUpdate(BaseModel):
 
 class UserOut(UserBase):
     id: int
+    employee_code: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class SimpleUser(BaseModel):
     id: int
     name: str
+    email: Optional[EmailStr] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Project Schemas
@@ -97,7 +100,7 @@ class ProjectOut(ProjectBase):
     id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # Task Schemas
@@ -114,7 +117,7 @@ class TaskBase(BaseModel):
     is_backdated: bool = False
     is_approved: bool = False
     created_by: int
-
+    status: Optional[TaskStatusEnum] = None
 
 class TaskCreate(TaskBase):
     pass
@@ -139,7 +142,7 @@ class TaskOut(TaskBase):
     reviewer_name: Optional[str] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class TaskFilterRequest(BaseModel):

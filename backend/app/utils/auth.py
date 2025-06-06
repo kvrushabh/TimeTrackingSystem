@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from app.models import User
 from fastapi import HTTPException, Depends, status
 from fastapi.security import OAuth2PasswordBearer
-from app.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
+from app.config import settings
 
 # Set up bcrypt hasher
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -19,9 +19,9 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 # JWT
-SECRET_KEY = SECRET_KEY
-ALGORITHM = ALGORITHM
-ACCESS_TOKEN_EXPIRE_MINUTES = ACCESS_TOKEN_EXPIRE_MINUTES
+SECRET_KEY = settings.jwt_secret_key
+ALGORITHM = settings.jwt_algorithm
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.jwt_expire_minutes
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 

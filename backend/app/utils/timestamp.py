@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, func
+from sqlalchemy import Column, DateTime
 from datetime import datetime, timezone
 
 def utc_now():

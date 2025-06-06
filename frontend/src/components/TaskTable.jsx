@@ -12,10 +12,14 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import CheckIcon from '@mui/icons-material/Check';
 import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
 import api from '../api/axios';
 import { jwtDecode } from 'jwt-decode';
-import { saveAs } from 'file-saver';
+import AddTaskModal from '../modals/AddTaskModal';
+
+dayjs.extend(utc);
 
 const TaskTable = ({ isBackdatedTab = false }) => {
   const [tasks, setTasks] = useState([]);
@@ -31,6 +35,8 @@ const TaskTable = ({ isBackdatedTab = false }) => {
   const [projects, setProjects] = useState([]);
   const [users, setUsers] = useState([]);
   const [sortConfig, setSortConfig] = useState({ key: 'start_time', direction: 'desc' });
+
+  const [editTask, setEditTask] = useState(null);
 
   const token = localStorage.getItem('token');
   const currentUser = token ? (() => {
@@ -78,8 +84,8 @@ const TaskTable = ({ isBackdatedTab = false }) => {
   const fetchTasks = async () => {
     const payload = {
       ...filters,
-      from_date: fromDate.format('YYYY-MM-DD'),
-      to_date: toDate.format('YYYY-MM-DD')
+      from_date: fromDate.utc().format('YYYY-MM-DD'),
+      to_date: toDate.utc().format('YYYY-MM-DD')
     };
 
     Object.keys(payload).forEach((key) => {
@@ -128,6 +134,15 @@ const TaskTable = ({ isBackdatedTab = false }) => {
     }
   };
 
+  const handleApprove = async (id) => {
+    try {
+      await api.put(`/tasks/${id}/approve`);
+      fetchTasks();
+    } catch (err) {
+      console.error('Failed to approve task', err);
+    }
+  };
+
   const handleDelete = async (id) => {
     try {
       await api.delete(`/tasks/${id}`);
@@ -139,13 +154,13 @@ const TaskTable = ({ isBackdatedTab = false }) => {
 
   const handleDownload = async () => {
     const payload = {
-    ...filters,
-    from_date: fromDate.format('YYYY-MM-DD'),
-    to_date: toDate.format('YYYY-MM-DD')
-  };
+      ...filters,
+      from_date: fromDate.utc().format('YYYY-MM-DD'),
+      to_date: toDate.utc().format('YYYY-MM-DD')
+    };
 
-  Object.keys(payload).forEach((key) => {
-    if (payload[key] === '' || payload[key] === undefined) {
+    Object.keys(payload).forEach(key => {
+      if (payload[key] === '' || payload[key] === undefined) {
         payload[key] = null;
       }
     });
@@ -284,8 +299,15 @@ const TaskTable = ({ isBackdatedTab = false }) => {
                     {task.status === 'In Progress' && task.user_id === currentUser.id && (
                       <IconButton onClick={() => handleComplete(task.id)}><DoneIcon /></IconButton>
                     )}
-                    {currentUser.role !== 'Employee' && currentUser.role !== 'TL' && (
-                      <IconButton><EditIcon /></IconButton>
+                    {task.status === 'To Be Approved' &&
+                      ['Manager', 'Management', 'Admin'].includes(currentUser.role) &&
+                      isBackdatedTab && (
+                        <IconButton onClick={() => handleApprove(task.id)}><CheckIcon /></IconButton>
+                    )}
+                    {['Manager', 'Management', 'Admin'].includes(currentUser.role) &&
+                      task.status !== 'Approved' &&
+                      task.status !== 'Done' && (
+                        <IconButton onClick={() => setEditTask(task)}><EditIcon /></IconButton>
                     )}
                     <IconButton onClick={() => handleDelete(task.id)}><DeleteIcon /></IconButton>
                   </TableCell>
@@ -303,6 +325,18 @@ const TaskTable = ({ isBackdatedTab = false }) => {
           onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value)); setPage(0); }}
         />
       </TableContainer>
+
+      {/* Reuse AddTaskModal for editing */}
+      {editTask && (
+        <AddTaskModal
+          open={Boolean(editTask)}
+          handleClose={() => setEditTask(null)}
+          onTaskAdded={fetchTasks}
+          isBackdated={editTask.is_backdated}
+          editTaskData={editTask}
+          isEdit={true}
+        />
+      )}
     </Box>
   );
 };

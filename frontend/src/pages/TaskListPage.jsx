@@ -23,7 +23,12 @@ const TaskListPage = () => {
       <TaskTabs selectedTab={selectedTab} setSelectedTab={setSelectedTab} />
 
       <TaskTable isBackdatedTab={selectedTab === 'backdated'} key={reloadKey} />
-      <AddTaskModal open={openModal} handleClose={() => setOpenModal(false)} onTaskAdded={handleReload} />
+      <AddTaskModal
+        open={openModal}
+        handleClose={() => setOpenModal(false)}
+        onTaskAdded={handleReload}
+        isBackdated={selectedTab === 'backdated'}
+      />
 
     </Box>
   )

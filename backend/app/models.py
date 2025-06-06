@@ -22,18 +22,19 @@ class User(Base, TimestampMixin):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    EmpCode = Column(String(50), unique=True, nullable=True)
+    employee_code = Column(Integer, unique=True, nullable=False, index=True)
     name = Column(String(50), nullable=False)
     username = Column(String(50), unique=True, nullable=False)
+    email = Column(String, unique=True, index=True)
     password = Column(String(150), nullable=False)
     department = Column(Enum(DepartmentEnum), nullable=False)
     reporting_manager = Column(Integer, ForeignKey('users.id'), nullable=True)
-    TL = Column(Integer, ForeignKey('users.id'), nullable=True)
+    tl = Column(Integer, ForeignKey('users.id'), nullable=True)
     role = Column(Enum(RoleEnum), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
 
     reporting_manager_user = relationship("User", remote_side=[id], foreign_keys=[reporting_manager], post_update=True)
-    tl_user = relationship("User", remote_side=[id], foreign_keys=[TL], post_update=True)
+    tl_user = relationship("User", remote_side=[id], foreign_keys=[tl], post_update=True)
 
 
 class Project(Base, TimestampMixin):
@@ -74,8 +75,8 @@ class Task(Base, TimestampMixin):
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
     task_title = Column(String(50), nullable=False)
     task_details = Column(String(256), nullable=True)
-    start_time = Column(DateTime, nullable=False)
-    end_time = Column(DateTime, nullable=True)
+    start_time = Column(DateTime(timezone=True), nullable=False)
+    end_time = Column(DateTime(timezone=True), nullable=True)
     total_time_minutes = Column(Float, nullable=True)
     task_type = Column(Enum(TaskTypeEnum), nullable=False)
     reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -88,3 +89,4 @@ class Task(Base, TimestampMixin):
     reviewer = relationship("User", foreign_keys=[reviewer_id])
     creator = relationship("User", foreign_keys=[created_by])
     project = relationship("Project", foreign_keys=[project_id])
+

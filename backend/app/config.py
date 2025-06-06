@@ -1,17 +1,17 @@
-import os
-from dotenv import load_dotenv
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
 
-load_dotenv()
+class Settings(BaseSettings):
+    DATABASE_URL: str
+    EMAIL_HOST: str
+    EMAIL_PORT: int = 587
+    EMAIL_USER: str
+    EMAIL_PASSWORD: str
 
-class Settings:
-    DATABASE_URL = os.getenv("DATABASE_URL")
-    EMAIL_HOST = os.getenv("EMAIL_HOST")
-    EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
-    EMAIL_USER = os.getenv("EMAIL_USER")
-    EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+    jwt_secret_key: str
+    jwt_algorithm: str
+    jwt_expire_minutes: int
+
+    model_config = SettingsConfigDict(env_file=".env")
 
 settings = Settings()
-
-SECRET_KEY = os.getenv("JWT_SECRET_KEY")
-ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", 60))

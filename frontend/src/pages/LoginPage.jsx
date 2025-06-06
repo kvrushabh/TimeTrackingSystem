@@ -12,12 +12,6 @@ const LoginPage = () => {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
 
-  console.log(username);
-  console.log(password);
-  console.log('---------------------');
-  
-
-
   const handleLogin = async (e) => {
     e.preventDefault()
     try {

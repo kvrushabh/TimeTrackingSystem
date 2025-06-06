@@ -1,9 +1,7 @@
 from fastapi import FastAPI
 from .database import Base, engine
-from .routers import users, projects, tasks, timesheet, approvals, auth
+from .routers import users, projects, tasks, auth
 from fastapi.middleware.cors import CORSMiddleware
-
-Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Time Tracker API")
 
@@ -24,10 +22,13 @@ app.add_middleware(
 app.include_router(users.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
 app.include_router(tasks.router, prefix="/api")
-app.include_router(timesheet.router, prefix="/api")
-app.include_router(approvals.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 
 @app.get("/")
 def root():
     return {"status": "Backend running"}
+
+@app.on_event("startup")
+async def on_startup():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
