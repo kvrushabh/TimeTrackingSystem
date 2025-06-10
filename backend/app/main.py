@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from .database import Base, engine
 from .routers import users, projects, tasks, auth
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 app = FastAPI(title="Time Tracker API")
 
@@ -32,3 +33,7 @@ def root():
 async def on_startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+@app.get('/robots.txt',include_in_schema=False)
+def robots():
+    return FileResponse("robots.txt")

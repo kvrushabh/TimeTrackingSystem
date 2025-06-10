@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import {
   Box, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   TablePagination, Paper, TextField, Button, MenuItem, FormControl, InputLabel,
-  Select, IconButton, Typography, useMediaQuery
+  Select, IconButton, Typography, useMediaQuery, Tooltip, Dialog, DialogActions,
+  DialogContent, DialogContentText, DialogTitle
 } from '@mui/material';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -26,8 +27,6 @@ const TaskTable = ({ isBackdatedTab = false }) => {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
-  const isMobile = useMediaQuery('(max-width:768px)');
-
   const [fromDate, setFromDate] = useState(dayjs().subtract(7, 'day'));
   const [toDate, setToDate] = useState(dayjs());
   const [filters, setFilters] = useState({});
@@ -35,8 +34,8 @@ const TaskTable = ({ isBackdatedTab = false }) => {
   const [projects, setProjects] = useState([]);
   const [users, setUsers] = useState([]);
   const [sortConfig, setSortConfig] = useState({ key: 'start_time', direction: 'desc' });
-
   const [editTask, setEditTask] = useState(null);
+  const [dialog, setDialog] = useState({ open: false, action: null, taskId: null });
 
   const token = localStorage.getItem('token');
   const currentUser = token ? (() => {
@@ -48,6 +47,21 @@ const TaskTable = ({ isBackdatedTab = false }) => {
     }
   })() : { role: '', id: null };
 
+  const statusOptions = isBackdatedTab
+    ? ["To Be Approved", "Approved"]
+    : ["In Progress", "Done", "Approved"];
+
+  const headers = [
+    { key: 'date', label: 'Date' },
+    { key: 'project_id', label: 'Project' },
+    { key: 'user_id', label: 'User' },
+    { key: 'task_title', label: 'Task Title' },
+    { key: 'start_time', label: 'Start Time' },
+    { key: 'end_time', label: 'End Time' },
+    { key: 'total_time_minutes', label: 'Total Time' },
+    { key: 'status', label: 'Status' },
+  ];
+
   useEffect(() => {
     const defaultFilters = {
       task_type: '',
@@ -56,135 +70,12 @@ const TaskTable = ({ isBackdatedTab = false }) => {
       user_id: currentUser.role === 'Employee' ? currentUser.id : null,
       created_by: null,
       only_backdated: isBackdatedTab,
-      filter_backdated_by_creator_type: 'all'
+      filter_backdated_by_creator_type: isBackdatedTab ? 'all' :''
     };
     setFilters(defaultFilters);
     setPendingFilters(defaultFilters);
     setPage(0);
   }, [isBackdatedTab]);
-
-  const fetchProjects = async () => {
-    try {
-      const res = await api.get('/projects/');
-      setProjects(res.data);
-    } catch (error) {
-      console.error('Failed to fetch projects', error);
-    }
-  };
-
-  const fetchUsers = async () => {
-    try {
-      const res = await api.get('/users/get-users');
-      setUsers(res.data);
-    } catch (error) {
-      console.error('Failed to fetch users', error);
-    }
-  };
-
-  const fetchTasks = async () => {
-    const payload = {
-      ...filters,
-      from_date: fromDate.utc().format('YYYY-MM-DD'),
-      to_date: toDate.utc().format('YYYY-MM-DD')
-    };
-
-    Object.keys(payload).forEach((key) => {
-      if (payload[key] === '' || payload[key] === undefined) {
-        payload[key] = null;
-      }
-    });
-
-    try {
-      const res = await api.post(`/tasks?page=${page + 1}&page_size=${rowsPerPage}&search=${search}`, payload);
-      const sorted = clientSort(res.data, sortConfig);
-      setTasks(sorted);
-    } catch (error) {
-      console.error('Failed to fetch tasks', error);
-    }
-  };
-
-  const clientSort = (data, config) => {
-    return [...data].sort((a, b) => {
-      const aVal = a[config.key];
-      const bVal = b[config.key];
-      if (aVal < bVal) return config.direction === 'asc' ? -1 : 1;
-      if (aVal > bVal) return config.direction === 'asc' ? 1 : -1;
-      return 0;
-    });
-  };
-
-  const handleSort = (key) => {
-    setSortConfig(prev => ({
-      key,
-      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
-    }));
-  };
-
-  const handleApplyFilters = () => {
-    setFilters({ ...pendingFilters });
-    setPage(0);
-  };
-
-  const handleComplete = async (id) => {
-    try {
-      await api.put(`/tasks/${id}/complete`);
-      fetchTasks();
-    } catch (err) {
-      console.error('Failed to complete task', err);
-    }
-  };
-
-  const handleApprove = async (id) => {
-    try {
-      await api.put(`/tasks/${id}/approve`);
-      fetchTasks();
-    } catch (err) {
-      console.error('Failed to approve task', err);
-    }
-  };
-
-  const handleDelete = async (id) => {
-    try {
-      await api.delete(`/tasks/${id}`);
-      fetchTasks();
-    } catch (err) {
-      console.error('Failed to delete task', err);
-    }
-  };
-
-  const handleDownload = async () => {
-    const payload = {
-      ...filters,
-      from_date: fromDate.utc().format('YYYY-MM-DD'),
-      to_date: toDate.utc().format('YYYY-MM-DD')
-    };
-
-    Object.keys(payload).forEach(key => {
-      if (payload[key] === '' || payload[key] === undefined) {
-        payload[key] = null;
-      }
-    });
-
-    try {
-      const res = await api.post(`/tasks/download`, payload, {
-        responseType: 'blob',
-      });
-
-      const blob = new Blob([res.data], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      });
-
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', 'task_report.xlsx');
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (error) {
-      console.error('Failed to download report', error);
-    }
-  };
 
   useEffect(() => {
     fetchProjects();
@@ -195,50 +86,157 @@ const TaskTable = ({ isBackdatedTab = false }) => {
     fetchTasks();
   }, [filters, page, rowsPerPage, fromDate, toDate, sortConfig]);
 
-  const headers = [
-    { key: 'date', label: 'Date' },
-    { key: 'user_id', label: 'User' },
-    { key: 'project_id', label: 'Project' },
-    { key: 'task_details', label: 'Task Details' },
-    { key: 'start_time', label: 'Start' },
-    { key: 'end_time', label: 'End' },
-    { key: 'task_type', label: 'Type' },
-    { key: 'reviewer_id', label: 'Reviewer' },
-    { key: 'status', label: 'Status' },
-    { key: 'total_time_minutes', label: 'Total (min)' }
-  ];
+  const fetchProjects = async () => {
+    const res = await api.get('/projects/');
+    setProjects(res.data);
+  };
+
+  const fetchUsers = async () => {
+    const res = await api.get('/users/get-users');
+    setUsers(res.data);
+  };
+
+  const fetchTasks = async () => {
+    const payload = {
+      ...filters,
+      from_date: fromDate.utc().format('YYYY-MM-DD'),
+      to_date: toDate.utc().format('YYYY-MM-DD')
+    };
+
+    Object.keys(payload).forEach((key) => {
+      if (payload[key] === '' || payload[key] === undefined) payload[key] = null;
+    });
+
+    const res = await api.post(`/tasks?page=${page + 1}&page_size=${rowsPerPage}&search=${search}`, payload);
+    setTasks(clientSort(res.data, sortConfig));
+  };
+
+  const clientSort = (data, config) => [...data].sort((a, b) => {
+    const aVal = a[config.key];
+    const bVal = b[config.key];
+    return config.direction === 'asc' ? (aVal > bVal ? 1 : -1) : (aVal < bVal ? 1 : -1);
+  });
+
+  const handleSort = (key) => {
+    setSortConfig(prev => ({
+      key,
+      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  const handleConfirmAction = async () => {
+    const { taskId, action } = dialog;
+    try {
+      if (action === 'delete') await api.delete(`/tasks/${taskId}`);
+      else if (action === 'approve') await api.put(`/tasks/${taskId}/approve`);
+      else if (action === 'complete') await api.put(`/tasks/${taskId}/complete`);
+      fetchTasks();
+    } catch (err) {
+      console.error(`Failed to ${action} task`, err);
+    } finally {
+      setDialog({ open: false, action: null, taskId: null });
+    }
+  };
+
+  const renderDialog = () => (
+    <Dialog open={dialog.open} onClose={() => setDialog({ open: false })}>
+      <DialogTitle>Confirm {dialog.action}</DialogTitle>
+      <DialogContent>
+        <DialogContentText>
+          Are you sure you want to {dialog.action} this task?
+        </DialogContentText>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setDialog({ open: false })}>Cancel</Button>
+        <Button onClick={handleConfirmAction} autoFocus>
+          Confirm
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+
+  const handleSearchKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      fetchTasks();
+    }
+  };
 
   return (
     <Box mt={2}>
       <Paper sx={{ p: 2, mb: 2 }}>
         <Box display="flex" flexWrap="wrap" gap={2}>
-          <TextField size="small" label="Search" value={search} onChange={(e) => setSearch(e.target.value)} />
           <LocalizationProvider dateAdapter={AdapterDayjs}>
-            <DatePicker label="From Date" value={fromDate} onChange={setFromDate} />
-            <DatePicker label="To Date" value={toDate} onChange={setToDate} />
+            <DatePicker
+              sx={{ minWidth: 250 }}
+              label="From Date"
+              value={fromDate}
+              onChange={(newDate) => setFromDate(newDate)}
+              disableFuture
+              shouldDisableDate={(date) => toDate && date.isAfter(toDate)}
+              slotProps={{
+                textField: { size: 'small' }
+              }}
+            />
+            <DatePicker
+              sx={{ minWidth: 250 }}
+              label="To Date"
+              value={toDate}
+              onChange={(newDate) => setToDate(newDate)}
+              disableFuture
+              shouldDisableDate={(date) => fromDate && date.isBefore(fromDate)}
+              slotProps={{
+                textField: { size: 'small' }
+              }}
+            />
           </LocalizationProvider>
 
-          <FormControl size="small" sx={{ minWidth: 160 }}>
-            <InputLabel>Project</InputLabel>
-            <Select name="project_id" value={pendingFilters.project_id || ''} onChange={(e) => setPendingFilters({ ...pendingFilters, project_id: e.target.value })}>
-              <MenuItem value="">All</MenuItem>
-              {projects.map(p => <MenuItem key={p.id} value={p.id}>{p.project_name}</MenuItem>)}
-            </Select>
-          </FormControl>
-
-          <FormControl size="small" sx={{ minWidth: 160 }}>
-            <InputLabel>Status</InputLabel>
-            <Select name="status" value={pendingFilters.status || ''} onChange={(e) => setPendingFilters({ ...pendingFilters, status: e.target.value })}>
-              <MenuItem value="">All</MenuItem>
-              {["In Progress", "To Be Approved", "Approved", "Done"].map(status => (
-                <MenuItem key={status} value={status}>{status}</MenuItem>
+          {/* Project Filter */}
+          <FormControl size="small" sx={{ minWidth: 250 }}>
+            <InputLabel shrink>Project</InputLabel>
+            <Select
+              name="project_id"
+              value={pendingFilters.project_id || ''}
+              onChange={(e) => setPendingFilters({ ...pendingFilters, project_id: e.target.value })}
+              displayEmpty
+              label="Project"
+            >
+              <MenuItem value=""><em>All</em></MenuItem>
+              {projects.map(p => (
+                <MenuItem key={p.id} value={p.id}>{p.project_name}</MenuItem>
               ))}
             </Select>
           </FormControl>
 
-          <FormControl size="small" sx={{ minWidth: 160 }}>
-            <InputLabel>Backdated By</InputLabel>
-            <Select name="filter_backdated_by_creator_type" value={pendingFilters.filter_backdated_by_creator_type || ''} onChange={(e) => setPendingFilters({ ...pendingFilters, filter_backdated_by_creator_type: e.target.value })}>
+          {/* Status Filter */}
+          <FormControl size="small" sx={{ minWidth: 250 }}>
+            <InputLabel shrink>Status</InputLabel>
+            <Select
+              name="status"
+              value={pendingFilters.status || ''}
+              onChange={(e) => setPendingFilters({ ...pendingFilters, status: e.target.value })}
+              displayEmpty
+              label="Status"
+            >
+              <MenuItem value=""><em>All</em></MenuItem>
+              {statusOptions.map(s => (
+                <MenuItem key={s} value={s}>{s}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          {/* Backdated By Filter */}
+          <FormControl size="small" sx={{ minWidth: 250 }}>
+            <InputLabel shrink>Backdated By</InputLabel>
+            <Select
+              name="filter_backdated_by_creator_type"
+              value={pendingFilters.filter_backdated_by_creator_type || ''}
+              onChange={(e) =>
+                setPendingFilters({ ...pendingFilters, filter_backdated_by_creator_type: e.target.value })
+              }
+              displayEmpty
+              label="Backdated By"
+            >
+              {!isBackdatedTab && <MenuItem value=""><em>-</em></MenuItem>}
               <MenuItem value="all">All</MenuItem>
               <MenuItem value="own">Own</MenuItem>
               <MenuItem value="manager">Manager</MenuItem>
@@ -246,17 +244,44 @@ const TaskTable = ({ isBackdatedTab = false }) => {
           </FormControl>
 
           {currentUser.role !== 'Employee' && (
-            <FormControl size="small" sx={{ minWidth: 160 }}>
-              <InputLabel>User</InputLabel>
-              <Select name="user_id" value={pendingFilters.user_id || ''} onChange={(e) => setPendingFilters({ ...pendingFilters, user_id: e.target.value })}>
-                <MenuItem value="">All</MenuItem>
-                {users.map(u => <MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>)}
+            <FormControl size="small" sx={{ minWidth: 250 }}>
+              <InputLabel shrink>User</InputLabel>
+              <Select
+                name="user_id"
+                value={pendingFilters.user_id || ''}
+                onChange={(e) => setPendingFilters({ ...pendingFilters, user_id: e.target.value })}
+                displayEmpty
+                label="User"
+              >
+                <MenuItem value=""><em>All</em></MenuItem>
+                {users.map(u => (
+                  <MenuItem key={u.id} value={u.id}>
+                    {u.name} ({u.role})
+                  </MenuItem>
+                ))}
               </Select>
             </FormControl>
           )}
 
-          <Button variant="contained" onClick={handleApplyFilters}>Apply Filters</Button>
-          <Button variant="outlined" onClick={handleDownload}>Download Report</Button>
+          <TextField
+            sx={{ minWidth: 250 }}
+            size="small"
+            label="Search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
+          />
+
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={() => {
+              setFilters({ ...pendingFilters });
+              setPage(0);
+            }}
+          >
+            Apply Filters
+          </Button>
         </Box>
       </Paper>
 
@@ -267,9 +292,9 @@ const TaskTable = ({ isBackdatedTab = false }) => {
               {headers.map(header => (
                 <TableCell key={header.key} onClick={() => handleSort(header.key)} sx={{ cursor: 'pointer' }}>
                   {header.label}
-                  {sortConfig.key === header.key && (
-                    sortConfig.direction === 'asc' ? <ArrowUpwardIcon fontSize="small" /> : <ArrowDownwardIcon fontSize="small" />
-                  )}
+                  {sortConfig.key === header.key &&
+                    (sortConfig.direction === 'asc' ? <ArrowUpwardIcon fontSize="small" /> : <ArrowDownwardIcon fontSize="small" />)
+                  }
                 </TableCell>
               ))}
               <TableCell>Actions</TableCell>
@@ -277,39 +302,42 @@ const TaskTable = ({ isBackdatedTab = false }) => {
           </TableHead>
           <TableBody>
             {tasks.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={headers.length + 1}>
-                  <Typography align="center" color="textSecondary">No data found</Typography>
-                </TableCell>
-              </TableRow>
+              <TableRow><TableCell colSpan={headers.length + 1}><Typography align="center" color="textSecondary">No data found</Typography></TableCell></TableRow>
             ) : (
               tasks.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map(task => (
                 <TableRow key={task.id}>
-                  <TableCell>{task.date}</TableCell>
-                  <TableCell>{users.find(u => u.id === task.user_id)?.name || '-'}</TableCell>
+                  <TableCell>{dayjs(task.date).format('MM-DD-YYYY')}</TableCell>
                   <TableCell>{projects.find(p => p.id === task.project_id)?.project_name || '-'}</TableCell>
-                  <TableCell>{task.task_details}</TableCell>
-                  <TableCell>{new Date(task.start_time).toLocaleString()}</TableCell>
-                  <TableCell>{task.end_time ? new Date(task.end_time).toLocaleString() : '-'}</TableCell>
-                  <TableCell>{task.task_type}</TableCell>
-                  <TableCell>{users.find(u => u.id === task.reviewer_id)?.name || '-'}</TableCell>
-                  <TableCell>{task.status}</TableCell>
+                  <TableCell>{users.find(u => u.id === task.user_id)?.name || '-'}</TableCell>
+                  <TableCell>{task.task_title}</TableCell>
+                  <TableCell>{dayjs(task.start_time).format('MM-DD-YYYY HH:mm')}</TableCell>
+                  <TableCell>{task.end_time ? dayjs(task.end_time).format('MM-DD-YYYY HH:mm') : '-'}</TableCell>
                   <TableCell>{task.total_time_minutes ?? '-'}</TableCell>
+                  <TableCell>{task.status}</TableCell>
                   <TableCell>
                     {task.status === 'In Progress' && task.user_id === currentUser.id && (
-                      <IconButton onClick={() => handleComplete(task.id)}><DoneIcon /></IconButton>
+                      <Tooltip title="Mark as Done">
+                        <IconButton onClick={() => setDialog({ open: true, action: 'complete', taskId: task.id })}><DoneIcon /></IconButton>
+                      </Tooltip>
                     )}
                     {task.status === 'To Be Approved' &&
-                      ['Manager', 'Management', 'Admin'].includes(currentUser.role) &&
-                      isBackdatedTab && (
-                        <IconButton onClick={() => handleApprove(task.id)}><CheckIcon /></IconButton>
+                      ['Manager', 'Management', 'Admin'].includes(currentUser.role) && isBackdatedTab && (
+                        <Tooltip title="Approve Task">
+                          <IconButton onClick={() => setDialog({ open: true, action: 'approve', taskId: task.id })}><CheckIcon /></IconButton>
+                        </Tooltip>
                     )}
                     {['Manager', 'Management', 'Admin'].includes(currentUser.role) &&
-                      task.status !== 'Approved' &&
-                      task.status !== 'Done' && (
-                        <IconButton onClick={() => setEditTask(task)}><EditIcon /></IconButton>
+                      (task.created_by === currentUser.id || task.status === 'To Be Approved') &&
+                      task.status !== 'Approved' && task.status !== 'Done' && (
+                        <Tooltip title="Edit Task">
+                          <IconButton onClick={() => setEditTask(task)}><EditIcon /></IconButton>
+                        </Tooltip>
                     )}
-                    <IconButton onClick={() => handleDelete(task.id)}><DeleteIcon /></IconButton>
+                    {task.created_by === currentUser.id && (
+                      <Tooltip title="Delete Task">
+                        <IconButton onClick={() => setDialog({ open: true, action: 'delete', taskId: task.id })}><DeleteIcon /></IconButton>
+                      </Tooltip>
+                    )}
                   </TableCell>
                 </TableRow>
               ))
@@ -326,7 +354,6 @@ const TaskTable = ({ isBackdatedTab = false }) => {
         />
       </TableContainer>
 
-      {/* Reuse AddTaskModal for editing */}
       {editTask && (
         <AddTaskModal
           open={Boolean(editTask)}
@@ -337,6 +364,8 @@ const TaskTable = ({ isBackdatedTab = false }) => {
           isEdit={true}
         />
       )}
+
+      {renderDialog()}
     </Box>
   );
 };

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Modal, Box, Typography, TextField, Button,
-  FormControl, Select, MenuItem, InputLabel
+  FormControl, Select, MenuItem, InputLabel, Alert
 } from '@mui/material';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -40,6 +40,7 @@ const AddTaskModal = ({ open, handleClose, onTaskAdded, isBackdated, isEdit = fa
   const [users, setUsers] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
   const [errors, setErrors] = useState({});
+  const [apiError, setApiError] = useState('');
 
   const token = localStorage.getItem('token');
   const currentUser = token ? (() => {
@@ -53,36 +54,61 @@ const AddTaskModal = ({ open, handleClose, onTaskAdded, isBackdated, isEdit = fa
 
   const requiredFields = [
     ...(isBackdated && ['Manager', 'Admin', 'Management'].includes(currentUser.role) ? ['user_id'] : []),
-    'project_id', 'task_title', 'task_details', 'start_time',
-    ...(isBackdated ? ['end_time'] : []),
+    'project_id', 'task_title', 'task_details',
+    ...(isBackdated ? ['start_time', 'end_time'] : []),
     'task_type'
   ];
 
-  const loadProjects = async () => {
-    try {
-      const res = await api.get('/projects/');
-      setProjects(res.data);
-    } catch (err) {
-      console.error('Failed to load projects', err);
+  useEffect(() => {
+    if (open) {
+      fetchInitialData();
+      initializeForm();
     }
+  }, [open, isBackdated, isEdit, editTaskData]);
+
+  const fetchInitialData = async () => {
+    const [projectRes, userRes, allUserRes] = await Promise.all([
+      api.get('/projects/'),
+      isBackdated ? api.get('/users/get-users') : Promise.resolve({ data: [] }),
+      api.get('/users/')
+    ]);
+    setProjects(projectRes.data);
+    if (isBackdated) setUsers(userRes.data);
+    setAllUsers(allUserRes.data);
   };
 
-  const loadUsers = async () => {
-    try {
-      const res = await api.get('/users/get-users');
-      setUsers(res.data);
-    } catch (error) {
-      console.error('Failed to fetch users', error);
-    }
-  };
+  const initializeForm = () => {
+    const now = dayjs();
+    setApiError('');
 
-  const loadAllUsers = async () => {
-    try {
-      const res = await api.get('/users/');
-      setAllUsers(res.data);
-    } catch (error) {
-      console.error('Failed to fetch all users', error);
+    if (isEdit && editTaskData) {
+      setForm({
+        ...editTaskData,
+        start_time: editTaskData.start_time ? dayjs(editTaskData.start_time) : null,
+        end_time: editTaskData.end_time ? dayjs(editTaskData.end_time) : null,
+        reviewer_id: editTaskData.reviewer_id || '',
+        total_time_minutes: editTaskData.total_time_minutes || 0
+      });
+    } else {
+      setForm({
+        user_id: (isBackdated && ['Manager', 'Admin', 'Management'].includes(currentUser.role)) ? '' : currentUser.id,
+        created_by: currentUser.id,
+        is_backdated: isBackdated,
+        is_approved: false,
+        date: now.format('YYYY-MM-DD'),
+        project_id: '',
+        task_title: '',
+        task_details: '',
+        start_time: isBackdated ? null : null,
+        end_time: null,
+        task_type: '',
+        reviewer_id: '',
+        status: isBackdated ? 'To Be Approved' : 'In Progress',
+        total_time_minutes: 0,
+      });
     }
+
+    setErrors({});
   };
 
   const calculateTotalTime = (start, end) => {
@@ -92,50 +118,9 @@ const AddTaskModal = ({ open, handleClose, onTaskAdded, isBackdated, isEdit = fa
     return endDate.isBefore(startDate) ? 0 : endDate.diff(startDate, 'minute');
   };
 
-  useEffect(() => {
-    if (open) {
-      loadProjects();
-      loadAllUsers();
-      if (isBackdated) loadUsers();
-
-      if (isEdit && editTaskData) {
-        setForm({
-          ...editTaskData,
-          start_time: editTaskData.start_time ? dayjs(editTaskData.start_time) : null,
-          end_time: editTaskData.end_time ? dayjs(editTaskData.end_time) : null,
-          reviewer_id: editTaskData.reviewer_id || '',
-          total_time_minutes: editTaskData.total_time_minutes || 0
-        });
-      } else {
-        const now = dayjs();
-        setForm({
-          user_id: (isBackdated && ['Manager', 'Admin', 'Management'].includes(currentUser.role)) ? '' : currentUser.id,
-          created_by: currentUser.id,
-          is_backdated: isBackdated,
-          is_approved: false,
-          date: now.format('YYYY-MM-DD'),
-          project_id: '',
-          task_title: '',
-          task_details: '',
-          start_time: isBackdated ? null : now,
-          end_time: null,
-          task_type: '',
-          reviewer_id: '',
-          status: isBackdated ? 'To Be Approved' : 'In Progress',
-          total_time_minutes: 0,
-        });
-      }
-
-      setErrors({});
-    }
-  }, [open, isBackdated, isEdit, editTaskData]);
-
   const handleChange = (e) => {
     const { name, value } = e.target;
     const updated = { ...form, [name]: value };
-    if (isBackdated && (name === 'start_time' || name === 'end_time')) {
-      updated.total_time_minutes = calculateTotalTime(updated.start_time, updated.end_time);
-    }
     setForm(updated);
     setErrors(prev => ({ ...prev, [name]: false }));
   };
@@ -160,6 +145,8 @@ const AddTaskModal = ({ open, handleClose, onTaskAdded, isBackdated, isEdit = fa
   const handleSubmit = async () => {
     if (!validateForm()) return;
 
+    const nowUtc = DateTime.utc();
+
     const payload = {
       ...form,
       reviewer_id: form.reviewer_id || null,
@@ -168,8 +155,12 @@ const AddTaskModal = ({ open, handleClose, onTaskAdded, isBackdated, isEdit = fa
         : currentUser.id,
       created_by: currentUser.id,
       project_id: Number(form.project_id),
-      date: DateTime.fromJSDate(form.start_time.toDate()).toUTC().toISODate(),
-      start_time: DateTime.fromJSDate(form.start_time.toDate()).toUTC().toISO(),
+      date: isBackdated
+        ? DateTime.fromJSDate(form.start_time.toDate()).toUTC().toISODate()
+        : nowUtc.toISODate(),
+      start_time: isBackdated && form.start_time
+        ? DateTime.fromJSDate(form.start_time.toDate()).toUTC().toISO()
+        : nowUtc.toISO(),
       end_time: form.end_time ? DateTime.fromJSDate(form.end_time.toDate()).toUTC().toISO() : null,
       total_time_minutes: isBackdated ? form.total_time_minutes : 0,
       is_backdated: isBackdated,
@@ -188,7 +179,12 @@ const AddTaskModal = ({ open, handleClose, onTaskAdded, isBackdated, isEdit = fa
       onTaskAdded?.();
     } catch (err) {
       console.error('Failed to save task', err);
-      alert('Error saving task');
+      const message =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        err?.message ||
+        'Unknown error occurred while saving task.';
+      setApiError(message);
     }
   };
 
@@ -201,7 +197,12 @@ const AddTaskModal = ({ open, handleClose, onTaskAdded, isBackdated, isEdit = fa
           {isEdit ? 'Edit Task' : isBackdated ? 'Add Backdated Task' : 'Add Regular Task'}
         </Typography>
 
-        {/* User dropdown for privileged roles only */}
+        {apiError && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {apiError}
+          </Alert>
+        )}
+
         {isBackdated && ['Manager', 'Admin', 'Management'].includes(currentUser.role) && (
           <>
             <InputLabel>{requiredMark("User", true)}</InputLabel>
@@ -242,34 +243,58 @@ const AddTaskModal = ({ open, handleClose, onTaskAdded, isBackdated, isEdit = fa
         <InputLabel>{requiredMark("Task Details", true)}</InputLabel>
         <TextField fullWidth size="small" multiline name="task_details" value={form.task_details} onChange={handleChange} error={errors.task_details} sx={{ mb: 2 }} />
 
-        <LocalizationProvider dateAdapter={AdapterDayjs}>
-          <InputLabel>{requiredMark("Start Time", true)}</InputLabel>
-          <DateTimePicker
-            value={form.start_time}
-            onChange={(val) => handleTimeChange('start_time', val)}
-            sx={{ mb: 2 }}
-            slotProps={{ textField: { error: errors.start_time, size: 'small', fullWidth: true } }}
-          />
-
-          {isBackdated && (
-            <>
-              <InputLabel>{requiredMark("End Time", true)}</InputLabel>
+        {isBackdated && (
+          <LocalizationProvider dateAdapter={AdapterDayjs}>
+            <InputLabel>{requiredMark("Start Time", true)}</InputLabel>
               <DateTimePicker
-                value={form.end_time}
-                onChange={(val) => handleTimeChange('end_time', val)}
+                value={form.start_time}
+                onChange={(val) => handleTimeChange('start_time', val)}
                 sx={{ mb: 2 }}
-                slotProps={{ textField: { error: errors.end_time, size: 'small', fullWidth: true } }}
+                slotProps={{
+                  textField: {
+                    error: errors.start_time,
+                    size: 'small',
+                    fullWidth: true
+                  }
+                }}
+                disableFuture
+                shouldDisableDate={(date) => form.end_time && date.isAfter(form.end_time)}
               />
-            </>
-          )}
-        </LocalizationProvider>
+            <InputLabel>{requiredMark("End Time", true)}</InputLabel>
+            <DateTimePicker
+              value={form.end_time}
+              onChange={(val) => handleTimeChange('end_time', val)}
+              sx={{ mb: 2 }}
+              slotProps={{
+                textField: {
+                  error: errors.end_time,
+                  size: 'small',
+                  fullWidth: true
+                }
+              }}
+              disableFuture
+              shouldDisableDate={(date) =>
+                form.start_time && dayjs(date).isBefore(dayjs(form.start_time), 'day')
+              }
+              shouldDisableTime={(timeValue, clockType) => {
+                if (form.start_time && clockType === 'minutes') {
+                  const minEndTime = dayjs(form.start_time).add(1, 'minute');
+                  return dayjs(form.end_time)
+                    .set(clockType, timeValue)
+                    .isBefore(minEndTime);
+                }
+                return false;
+              }}
+            />
+          </LocalizationProvider>
+        )}
 
         <InputLabel>Reviewer (optional)</InputLabel>
         <FormControl fullWidth size="small" sx={{ mb: 2 }}>
           <Select name="reviewer_id" value={form.reviewer_id} onChange={handleChange}>
             <MenuItem value=""><em>Select Reviewer</em></MenuItem>
             {allUsers.map(u => (
-              <MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>
+              <MenuItem key={u.id} value={u.id}>{u.name} ({u.role})</MenuItem>
             ))}
           </Select>
         </FormControl>

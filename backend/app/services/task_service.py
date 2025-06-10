@@ -27,8 +27,12 @@ async def create_task(task: schemas.TaskCreate, db: AsyncSession) -> Task:
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Check reviewer != user
+    if task.reviewer_id is not None and task.reviewer_id == task.user_id:
+        raise HTTPException(status_code=400, detail="Reviewer cannot be the same as the user")
+
     # Check backdated limit
-    if is_backdated and user.role == RoleEnum.Employee:
+    if is_backdated and (user.role == RoleEnum.Employee or user.role == RoleEnum.TL):
         first_day = today.replace(day=1)
         count_result = await db.execute(
             select(func.count()).select_from(Task).where(
@@ -40,25 +44,31 @@ async def create_task(task: schemas.TaskCreate, db: AsyncSession) -> Task:
         )
         count = count_result.scalar()
         if count >= 5:
-            raise HTTPException(status_code=400, detail="Max 5 backdated tasks allowed this month.")
+            raise HTTPException(status_code=400, detail="Max 5 backdated tasks allowed per month.")
+
+    # Convert times to UTC
+    start_time = ensure_utc(task.start_time)
+    end_time = ensure_utc(task.end_time)
+
+    # Validate start and end time
+    if start_time and end_time and end_time < start_time:
+        raise HTTPException(status_code=400, detail="End time cannot be before start time")
 
     # Prepare task data
     task_data = task.dict()
     task_data["is_backdated"] = is_backdated
     task_data["is_approved"] = False
+    task_data["start_time"] = start_time
+    task_data["end_time"] = end_time
 
     if not task_data.get("status"):
         task_data["status"] = TaskStatusEnum.ToBeApproved if is_backdated else TaskStatusEnum.InProgress
 
-    # Ensure UTC for datetime fields
-    task_data["start_time"] = ensure_utc(task_data.get("start_time"))
-    task_data["end_time"] = ensure_utc(task_data.get("end_time"))
-
     new_task = Task(**task_data)
 
     # Calculate total_time_minutes
-    if new_task.start_time and new_task.end_time:
-        total_minutes = (new_task.end_time - new_task.start_time).total_seconds() / 60
+    if start_time and end_time:
+        total_minutes = (end_time - start_time).total_seconds() / 60
         new_task.total_time_minutes = round(total_minutes, 2)
 
     db.add(new_task)
@@ -162,6 +172,7 @@ async def approve_task(task_id: int, db: AsyncSession) -> Task:
 async def edit_task(task_id: int, updated_data: schemas.TaskUpdate, db: AsyncSession, current_user: User) -> Task:
     result = await db.execute(select(Task).where(Task.id == task_id))
     task = result.scalar_one_or_none()
+
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
@@ -170,10 +181,25 @@ async def edit_task(task_id: int, updated_data: schemas.TaskUpdate, db: AsyncSes
 
     updates = updated_data.dict(exclude_unset=True)
 
+    # Do not allow start_time update for non-backdated
+    if not task.is_backdated and "start_time" in updates:
+        updates.pop("start_time")
+
+    # Reviewer cannot be same as user
+    if "reviewer_id" in updates and updates["reviewer_id"] == task.user_id:
+        raise HTTPException(status_code=400, detail="Reviewer cannot be the same as the user")
+
+    # Convert datetime fields to UTC
     if "start_time" in updates:
         updates["start_time"] = ensure_utc(updates["start_time"])
     if "end_time" in updates:
         updates["end_time"] = ensure_utc(updates["end_time"])
+
+    # Validate end_time > start_time
+    start_time = updates.get("start_time", task.start_time)
+    end_time = updates.get("end_time", task.end_time)
+    if start_time and end_time and end_time < start_time:
+        raise HTTPException(status_code=400, detail="End time cannot be before start time")
 
     for key, value in updates.items():
         setattr(task, key, value)

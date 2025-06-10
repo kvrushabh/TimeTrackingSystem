@@ -53,13 +53,20 @@ async def get_user_by_id(user_id: int, db: AsyncSession):
         raise HTTPException(status_code=404, detail="User not found")
     return user
 
+
 async def update_user(user_id: int, updates: schemas.UserUpdate, db: AsyncSession):
     user = await get_user_by_id(user_id, db)
-    for key, value in updates.dict(exclude_unset=True).items():
+
+    update_data = updates.dict(exclude_unset=True)
+    if "password" in update_data:
+        update_data["password"] = hash_password(update_data["password"])
+    for key, value in update_data.items():
         setattr(user, key, value)
+
     await db.commit()
     await db.refresh(user)
     return user
+
 
 async def delete_user(user_id: int, db: AsyncSession):
     user = await get_user_by_id(user_id, db)

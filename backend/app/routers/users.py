@@ -28,20 +28,28 @@ async def get_filtered_users(
     query = await db.execute(select(models.User).filter(models.User.is_active == True))
     users = query.scalars().all()
 
+    def to_simple_user(user: models.User) -> dict:
+        return {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "role": user.role
+        }
+
     if current_user.role == models.RoleEnum.Employee:
-        return [{"id": current_user.id, "name": current_user.name}]
+        return [to_simple_user(current_user)]
 
     elif current_user.role == models.RoleEnum.TL:
-        return [{"id": current_user.id, "name": current_user.name}] + [
-            {"id": u.id, "name": u.name} for u in users if u.tl == current_user.id
+        return [to_simple_user(current_user)] + [
+            to_simple_user(u) for u in users if u.tl == current_user.id
         ]
 
     elif current_user.role == models.RoleEnum.Manager:
-        return [{"id": current_user.id, "name": current_user.name}] + [
-            {"id": u.id, "name": u.name} for u in users if u.reporting_manager == current_user.id
+        return [to_simple_user(current_user)] + [
+            to_simple_user(u) for u in users if u.reporting_manager == current_user.id
         ]
 
-    return [{"id": u.id, "name": u.name} for u in users]
+    return [to_simple_user(u) for u in users]
 
 @router.get("/{user_id}", response_model=schemas.UserOut)
 async def get_user(user_id: int, db: AsyncSession = Depends(get_async_db)):

@@ -72,6 +72,7 @@ class SimpleUser(BaseModel):
     id: int
     name: str
     email: Optional[EmailStr] = None
+    role: Optional[RoleEnum] = None
 
     class Config:
         from_attributes = True
@@ -122,15 +123,16 @@ class TaskBase(BaseModel):
 class TaskCreate(TaskBase):
     pass
 
-
 class TaskUpdate(BaseModel):
+    start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     task_title: Optional[str] = None
     task_details: Optional[str] = None
     status: Optional[TaskStatusEnum] = None
     reviewer_id: Optional[int] = None
     task_type: Optional[TaskTypeEnum] = None
-
+    project_id: Optional[int] = None
+    user_id: Optional[int] = None
 
 class TaskOut(TaskBase):
     id: int
@@ -143,7 +145,6 @@ class TaskOut(TaskBase):
 
     class Config:
         from_attributes = True
-
 
 class TaskFilterRequest(BaseModel):
     user_id: Optional[int] = None
