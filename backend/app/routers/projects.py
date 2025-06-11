@@ -1,55 +1,28 @@
-from ..database import SessionLocal
-from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
-from app import models, schemas
+from app import schemas
+from app.dependencies import get_async_db
+from app.services import project_service
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
 @router.post("/", response_model=schemas.ProjectOut)
-def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)):
-    db_project = models.Project(**project.dict())
-    db.add(db_project)
-    db.commit()
-    db.refresh(db_project)
-    return db_project
+async def create(project: schemas.ProjectCreate, db: AsyncSession = Depends(get_async_db)):
+    return await project_service.create_project(project, db)
 
 @router.get("/", response_model=List[schemas.ProjectOut])
-def get_all_projects(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    return db.query(models.Project).offset(skip).limit(limit).all()
+async def get_all(skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_async_db)):
+    return await project_service.get_all_projects(skip, limit, db)
 
 @router.get("/{project_id}", response_model=schemas.ProjectOut)
-def get_project_by_id(project_id: int, db: Session = Depends(get_db)):
-    project = db.query(models.Project).filter(models.Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return project
+async def get_by_id(project_id: int, db: AsyncSession = Depends(get_async_db)):
+    return await project_service.get_project_by_id(project_id, db)
 
 @router.put("/{project_id}", response_model=schemas.ProjectOut)
-def update_project(project_id: int, updates: schemas.ProjectUpdate, db: Session = Depends(get_db)):
-    project = db.query(models.Project).filter(models.Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-
-    for key, value in updates.dict(exclude_unset=True).items():
-        setattr(project, key, value)
-
-    db.commit()
-    db.refresh(project)
-    return project
+async def update(project_id: int, updates: schemas.ProjectUpdate, db: AsyncSession = Depends(get_async_db)):
+    return await project_service.update_project(project_id, updates, db)
 
 @router.delete("/{project_id}")
-def delete_project(project_id: int, db: Session = Depends(get_db)):
-    project = db.query(models.Project).filter(models.Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    db.delete(project)
-    db.commit()
-    return {"detail": "Project deleted successfully"}
+async def delete(project_id: int, db: AsyncSession = Depends(get_async_db)):
+    return await project_service.delete_project(project_id, db)

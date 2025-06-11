@@ -1,0 +1,13 @@
+Hello {{manager_name}},
+
+A backdated task has been created by {{employee_name}}.
+
+Task Details:
+- Date: {{task_date}}
+- Title: {{task_title}}
+- Task description: {{task_details}}
+
+Please review the task in the system.
+
+Regards,  
+Time Tracking System
