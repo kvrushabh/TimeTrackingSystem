@@ -2,16 +2,16 @@ from datetime import datetime, date, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, func
 from typing import List, Optional
-
-from app import models, schemas
+from app import schemas
 from app.models import Task, User, Project, RoleEnum, TaskStatusEnum
 from fastapi import HTTPException
 import io
 from fastapi.responses import StreamingResponse
-from openpyxl import Workbook
 import pandas as pd
 import pytz
-
+from app.utils.mail_config import send_email_async
+from jinja2 import Template
+import os
 
 def ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
     """Ensure datetime is timezone-aware and in UTC"""
@@ -21,9 +21,8 @@ def ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
         return dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
 
-
-def to_local_str(dt: Optional[datetime], tz_str: str) -> str:
-    if not dt:
+def to_local_str(dt: datetime, tz_str: str) -> str:
+    if dt is None:
         return ""
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
@@ -34,11 +33,13 @@ def to_local_str(dt: Optional[datetime], tz_str: str) -> str:
     local_dt = dt.astimezone(tz)
     return local_dt.strftime("%m-%d-%Y %H:%M:%S")
 
+def to_local_date_str(d: date) -> str:
+    return d.strftime("%m-%d-%Y") if d else ""
 
-def to_local_date_str(d: Optional[date]) -> str:
-    if not d:
-        return ""
-    return d.strftime("%m-%d-%Y")
+def render_email_template(file_path: str, context: dict) -> str:
+    with open(file_path, 'r') as f:
+        template = Template(f.read())
+    return template.render(**context)
 
 
 async def create_task(task: schemas.TaskCreate, db: AsyncSession) -> Task:
@@ -56,11 +57,11 @@ async def create_task(task: schemas.TaskCreate, db: AsyncSession) -> Task:
         raise HTTPException(status_code=400, detail="Reviewer cannot be the same as the user")
 
     # Check backdated limit
-    if is_backdated and (user.role == RoleEnum.Employee or user.role == RoleEnum.TL):
+    if is_backdated and user.role in [RoleEnum.Employee, RoleEnum.TL]:
         first_day = today.replace(day=1)
         count_result = await db.execute(
             select(func.count()).select_from(Task).where(
-                Task.user_id == task.user_id,
+                Task.created_by  == task.user_id,
                 Task.date >= first_day,
                 Task.date < today,
                 Task.is_backdated == True
@@ -98,6 +99,23 @@ async def create_task(task: schemas.TaskCreate, db: AsyncSession) -> Task:
     db.add(new_task)
     await db.commit()
     await db.refresh(new_task)
+
+    # Send backdated email
+    if is_backdated and user.role in [RoleEnum.Employee, RoleEnum.TL] and user.reporting_manager:
+        manager_result = await db.execute(select(User).where(User.id == user.reporting_manager))
+        manager = manager_result.scalar_one_or_none()
+        if manager and manager.email:
+            template_path = os.path.join("templates", "backdated_task_email.txt")
+            body = render_email_template(template_path, {
+                "manager_name": manager.name,
+                "employee_name": user.name,
+                "task_date": task.date.strftime("%Y-%m-%d"),
+                "task_title": task.task_title,
+                "task_details": task.task_details,
+            })
+            subject = f"[TimeTracking] Backdated Task Submitted by {user.name}"
+            await send_email_async(subject, manager.email, body)
+
     return new_task
 
 
@@ -250,28 +268,6 @@ async def delete_task(task_id: int, db: AsyncSession, current_user: User):
     return {"detail": "Task deleted"}
 
 
-import pandas as pd
-import io
-from fastapi.responses import StreamingResponse
-from datetime import datetime, date, timezone
-import pytz
-
-def to_local_str(dt: datetime, tz_str: str) -> str:
-    if dt is None:
-        return ""
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    try:
-        tz = pytz.timezone(tz_str)
-    except pytz.UnknownTimeZoneError:
-        tz = pytz.UTC
-    local_dt = dt.astimezone(tz)
-    return local_dt.strftime("%m-%d-%Y %H:%M:%S")
-
-def to_local_date_str(d: date) -> str:
-    return d.strftime("%m-%d-%Y") if d else ""
-
-
 async def download_task_report(filters: schemas.TaskFilterRequest, db: AsyncSession, current_user: User, search: Optional[str] = None):
     tasks = await list_tasks(filters, db, current_user, page=1, page_size=10000, search=search)
 
@@ -289,7 +285,7 @@ async def download_task_report(filters: schemas.TaskFilterRequest, db: AsyncSess
     projects_result = await db.execute(select(Project.id, Project.project_name).where(Project.id.in_(project_ids)))
     project_map = {pid: name for pid, name in projects_result.all()}
 
-    # Use frontend-sent timezone, fallback to UTC
+    # Use frontend-sent timezone, default UTC
     user_timezone = filters.timezone or "UTC"
 
     # Prepare rows for DataFrame
