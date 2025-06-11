@@ -161,6 +161,44 @@ const TaskTable = ({ isBackdatedTab = false }) => {
     }
   };
 
+  const handleDownload = async () => {
+
+    try {
+      // Clean filters: convert "" to null and remove empty fields
+      const cleanedFilters = Object.fromEntries(
+        Object.entries(filters).map(([key, value]) => {
+          if (value === "") return [key, null];  // convert empty string to null
+          return [key, value];
+        })
+      );
+
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+      const payload = {
+        ...cleanedFilters,
+        from_date: fromDate.utc().format('YYYY-MM-DD'),
+        to_date: toDate.utc().format('YYYY-MM-DD'),
+        timezone
+      };
+      
+      const response = await api.post('/tasks/download', payload, {
+        responseType: 'blob',
+      });
+
+      const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "task_report.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Download failed", error);
+    }
+  };
+
   return (
     <Box mt={2}>
       <Paper sx={{ p: 2, mb: 2 }}>
@@ -281,6 +319,16 @@ const TaskTable = ({ isBackdatedTab = false }) => {
             }}
           >
             Apply Filters
+          </Button>
+
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={() => {
+              handleDownload();
+            }}
+          >
+            Download Report
           </Button>
         </Box>
       </Paper>
