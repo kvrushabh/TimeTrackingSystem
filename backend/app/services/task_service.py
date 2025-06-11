@@ -4,8 +4,13 @@ from sqlalchemy import select, or_, func
 from typing import List, Optional
 
 from app import models, schemas
-from app.models import Task, User, RoleEnum, TaskStatusEnum
+from app.models import Task, User, Project, RoleEnum, TaskStatusEnum
 from fastapi import HTTPException
+import io
+from fastapi.responses import StreamingResponse
+from openpyxl import Workbook
+import pandas as pd
+import pytz
 
 
 def ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
@@ -15,6 +20,25 @@ def ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
+
+
+def to_local_str(dt: Optional[datetime], tz_str: str) -> str:
+    if not dt:
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    try:
+        tz = pytz.timezone(tz_str)
+    except pytz.UnknownTimeZoneError:
+        tz = pytz.UTC
+    local_dt = dt.astimezone(tz)
+    return local_dt.strftime("%m-%d-%Y %H:%M:%S")
+
+
+def to_local_date_str(d: Optional[date]) -> str:
+    if not d:
+        return ""
+    return d.strftime("%m-%d-%Y")
 
 
 async def create_task(task: schemas.TaskCreate, db: AsyncSession) -> Task:
@@ -224,3 +248,81 @@ async def delete_task(task_id: int, db: AsyncSession, current_user: User):
     await db.delete(task)
     await db.commit()
     return {"detail": "Task deleted"}
+
+
+import pandas as pd
+import io
+from fastapi.responses import StreamingResponse
+from datetime import datetime, date, timezone
+import pytz
+
+def to_local_str(dt: datetime, tz_str: str) -> str:
+    if dt is None:
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    try:
+        tz = pytz.timezone(tz_str)
+    except pytz.UnknownTimeZoneError:
+        tz = pytz.UTC
+    local_dt = dt.astimezone(tz)
+    return local_dt.strftime("%m-%d-%Y %H:%M:%S")
+
+def to_local_date_str(d: date) -> str:
+    return d.strftime("%m-%d-%Y") if d else ""
+
+
+async def download_task_report(filters: schemas.TaskFilterRequest, db: AsyncSession, current_user: User, search: Optional[str] = None):
+    tasks = await list_tasks(filters, db, current_user, page=1, page_size=10000, search=search)
+
+    # Collect user/project/reviewer IDs
+    user_ids = {task.user_id for task in tasks}
+    project_ids = {task.project_id for task in tasks}
+    reviewer_ids = {task.reviewer_id for task in tasks if task.reviewer_id}
+    all_user_ids = list(user_ids.union(reviewer_ids))
+
+    # Fetch user names
+    users_result = await db.execute(select(User.id, User.name).where(User.id.in_(all_user_ids)))
+    user_map = {uid: name for uid, name in users_result.all()}
+
+    # Fetch project names
+    projects_result = await db.execute(select(Project.id, Project.project_name).where(Project.id.in_(project_ids)))
+    project_map = {pid: name for pid, name in projects_result.all()}
+
+    # Use frontend-sent timezone, fallback to UTC
+    user_timezone = filters.timezone or "UTC"
+
+    # Prepare rows for DataFrame
+    rows = []
+    for task in tasks:
+        rows.append({
+            "Date": to_local_date_str(task.date),
+            "User": user_map.get(task.user_id, "Unknown"),
+            "Project": project_map.get(task.project_id, "Unknown"),
+            "Task Title": task.task_title,
+            "Task Details": task.task_details,
+            "Start Time": to_local_str(task.start_time, user_timezone) if task.start_time else "",
+            "End Time": to_local_str(task.end_time, user_timezone) if task.end_time else "",
+            "Task Type": task.task_type.name if task.task_type else "",  # Strip enum prefix
+            "Reviewer": user_map.get(task.reviewer_id, "") if task.reviewer_id else "",
+            "Status": task.status.name if task.status else "",  # Strip enum prefix
+            "Is Backdated": str(task.is_backdated).upper(),
+            "Is Approved": str(task.is_approved).upper(),
+            "Total Minutes": task.total_time_minutes,
+        })
+
+    # Generate Excel
+    df = pd.DataFrame(rows)
+    stream = io.BytesIO()
+    with pd.ExcelWriter(stream, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Task Report")
+
+    stream.seek(0)
+    filename = f"task_report_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.xlsx"
+
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+

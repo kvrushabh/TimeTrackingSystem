@@ -154,6 +154,7 @@ class TaskFilterRequest(BaseModel):
     created_by: Optional[int] = None
     from_date: Optional[date] = None
     to_date: Optional[date] = None
+    timezone: Optional[str] = "UTC"
 
     only_backdated: Optional[bool] = False
     filter_backdated_by_creator_type: Optional[Literal["own", "manager", "all"]] = "all"

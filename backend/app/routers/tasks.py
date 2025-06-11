@@ -7,6 +7,8 @@ from app import schemas
 from app.dependencies import get_async_db, get_current_user
 from app.models import User, RoleEnum, TaskStatusEnum
 from app.services import task_service
+from fastapi.responses import StreamingResponse
+
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
@@ -51,3 +53,13 @@ async def edit_task(
 @router.delete("/{task_id}")
 async def delete_task(task_id: int, db: AsyncSession = Depends(get_async_db), current_user: User = Depends(get_current_user)):
     return await task_service.delete_task(task_id, db, current_user)
+
+
+@router.post("/download")
+async def download_task_report(
+    filters: schemas.TaskFilterRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user),
+    search: Optional[str] = None,
+):
+    return await task_service.download_task_report(filters, db, current_user, search)
