@@ -44,7 +44,7 @@ def render_email_template(file_path: str, context: dict) -> str:
 
 async def create_task(task: schemas.TaskCreate, db: AsyncSession) -> Task:
     today = date.today()
-    is_backdated = task.date != today
+    is_backdated = task.is_backdated
 
     # Get user
     user_result = await db.execute(select(User).where(User.id == task.user_id))
@@ -56,6 +56,17 @@ async def create_task(task: schemas.TaskCreate, db: AsyncSession) -> Task:
     if task.reviewer_id is not None and task.reviewer_id == task.user_id:
         raise HTTPException(status_code=400, detail="Reviewer cannot be the same as the user")
 
+    # check already InProgress task
+    if not is_backdated:
+        existing_task_query = await db.execute(
+            select(Task).where(
+                Task.user_id == task.user_id,
+                Task.status == TaskStatusEnum.InProgress
+            )
+        )
+        if existing_task_query.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="You already have one active task. Please complete it before adding a new one.")
+
     # Check backdated limit
     if is_backdated and user.role in [RoleEnum.Employee, RoleEnum.TL]:
         first_day = today.replace(day=1)
@@ -63,7 +74,7 @@ async def create_task(task: schemas.TaskCreate, db: AsyncSession) -> Task:
             select(func.count()).select_from(Task).where(
                 Task.created_by  == task.user_id,
                 Task.date >= first_day,
-                Task.date < today,
+                Task.date <= today,
                 Task.is_backdated == True
             )
         )
@@ -91,10 +102,10 @@ async def create_task(task: schemas.TaskCreate, db: AsyncSession) -> Task:
 
     new_task = Task(**task_data)
 
-    # Calculate total_time_minutes
+    # Calculate total_time_spent
     if start_time and end_time:
         total_minutes = (end_time - start_time).total_seconds() / 60
-        new_task.total_time_minutes = round(total_minutes, 2)
+        new_task.total_time_spent = round(total_minutes, 2)
 
     db.add(new_task)
     await db.commit()
@@ -109,7 +120,7 @@ async def create_task(task: schemas.TaskCreate, db: AsyncSession) -> Task:
             body = render_email_template(template_path, {
                 "manager_name": manager.name,
                 "employee_name": user.name,
-                "task_date": task.date.strftime("%Y-%m-%d"),
+                "task_date": task.date.strftime("%m-%d-%Y"),
                 "task_title": task.task_title,
                 "task_details": task.task_details,
             })
@@ -140,7 +151,7 @@ async def complete_task(task_id: int, end_time: Optional[datetime], db: AsyncSes
     total_time = (final_end_time - task.start_time).total_seconds() / 60
     task.end_time = final_end_time
     task.status = TaskStatusEnum.Done
-    task.total_time_minutes = round(total_time, 2)
+    task.total_time_spent = round(total_time, 2)
 
     await db.commit()
     await db.refresh(task)
@@ -247,7 +258,7 @@ async def edit_task(task_id: int, updated_data: schemas.TaskUpdate, db: AsyncSes
         setattr(task, key, value)
 
     if task.start_time and task.end_time:
-        task.total_time_minutes = round((task.end_time - task.start_time).total_seconds() / 60, 2)
+        task.total_time_spent = round((task.end_time - task.start_time).total_seconds() / 60, 2)
 
     await db.commit()
     await db.refresh(task)
@@ -304,7 +315,7 @@ async def download_task_report(filters: schemas.TaskFilterRequest, db: AsyncSess
             "Status": task.status.name if task.status else "",  # Strip enum prefix
             "Is Backdated": str(task.is_backdated).upper(),
             "Is Approved": str(task.is_approved).upper(),
-            "Total Minutes": task.total_time_minutes,
+            "Total Minutes": task.total_time_spent,
         })
 
     # Generate Excel

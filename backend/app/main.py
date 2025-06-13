@@ -29,11 +29,6 @@ app.include_router(auth.router, prefix="/api")
 def root():
     return {"status": "Backend running"}
 
-@app.on_event("startup")
-async def on_startup():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
 @app.get('/robots.txt',include_in_schema=False)
 def robots():
     return FileResponse("robots.txt")
