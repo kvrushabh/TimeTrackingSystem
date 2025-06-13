@@ -77,7 +77,7 @@ class Task(Base, TimestampMixin):
     task_details = Column(String(256), nullable=True)
     start_time = Column(DateTime(timezone=True), nullable=False)
     end_time = Column(DateTime(timezone=True), nullable=True)
-    total_time_minutes = Column(Float, nullable=True)
+    total_time_spent = Column(String, nullable=True)
     task_type = Column(Enum(TaskTypeEnum), nullable=False)
     reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     status = Column(Enum(TaskStatusEnum), nullable=True)

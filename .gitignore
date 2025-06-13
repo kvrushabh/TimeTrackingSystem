@@ -49,8 +49,7 @@ var/
 
 # FastAPI specific
 # If you use migrations (like Alembic)
-alembic.ini
-alembic/
+alembic/versions
 
 # React stuff (frontend)
 

@@ -52,6 +52,7 @@ class UserCreate(UserBase):
 
 class UserUpdate(BaseModel):
     name: Optional[str]
+    email: EmailStr
     department: Optional[DepartmentEnum]
     reporting_manager: Optional[int]
     tl: Optional[int]
@@ -137,7 +138,7 @@ class TaskUpdate(BaseModel):
 class TaskOut(TaskBase):
     id: int
     status: TaskStatusEnum
-    total_time_minutes: Optional[float] = None
+    total_time_spent: Optional[float] = None
 
     # Extra fields for display in frontend
     project_name: Optional[str] = None

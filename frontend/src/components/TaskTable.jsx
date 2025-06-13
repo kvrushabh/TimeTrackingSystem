@@ -19,6 +19,7 @@ import utc from 'dayjs/plugin/utc';
 import api from '../api/axios';
 import { jwtDecode } from 'jwt-decode';
 import AddTaskModal from '../modals/AddTaskModal';
+import localizedFormat from 'dayjs/plugin/localizedFormat';
 
 dayjs.extend(utc);
 
@@ -54,11 +55,11 @@ const TaskTable = ({ isBackdatedTab = false }) => {
   const headers = [
     { key: 'date', label: 'Date' },
     { key: 'project_id', label: 'Project' },
-    { key: 'user_id', label: 'User' },
+    ...(currentUser.role !== 'Employee' ? [{ key: 'user_id', label: 'User' }] : []),
     { key: 'task_title', label: 'Task Title' },
     { key: 'start_time', label: 'Start Time' },
     { key: 'end_time', label: 'End Time' },
-    { key: 'total_time_minutes', label: 'Total Time' },
+    { key: 'total_time_spent', label: 'Total Time' },
     { key: 'status', label: 'Status' },
   ];
 
@@ -102,6 +103,12 @@ const TaskTable = ({ isBackdatedTab = false }) => {
       from_date: fromDate.utc().format('YYYY-MM-DD'),
       to_date: toDate.utc().format('YYYY-MM-DD')
     };
+
+    if (payload.filter_backdated_by_creator_type) {
+      payload.is_backdated = true;
+    } else {
+      payload.is_backdated = false;
+    }
 
     Object.keys(payload).forEach((key) => {
       if (payload[key] === '' || payload[key] === undefined) payload[key] = null;
@@ -356,11 +363,13 @@ const TaskTable = ({ isBackdatedTab = false }) => {
                 <TableRow key={task.id}>
                   <TableCell>{dayjs(task.date).format('MM-DD-YYYY')}</TableCell>
                   <TableCell>{projects.find(p => p.id === task.project_id)?.project_name || '-'}</TableCell>
-                  <TableCell>{users.find(u => u.id === task.user_id)?.name || '-'}</TableCell>
+                  {currentUser.role !== 'Employee' && (
+                    <TableCell>{users.find(u => u.id === task.user_id)?.name || '-'}</TableCell>
+                  )}
                   <TableCell>{task.task_title}</TableCell>
-                  <TableCell>{dayjs(task.start_time).format('MM-DD-YYYY HH:mm')}</TableCell>
-                  <TableCell>{task.end_time ? dayjs(task.end_time).format('MM-DD-YYYY HH:mm') : '-'}</TableCell>
-                  <TableCell>{task.total_time_minutes ?? '-'}</TableCell>
+                  <TableCell>{dayjs(task.start_time).format('MM-DD-YYYY hh:mm A')}</TableCell>
+                  <TableCell>{task.end_time ? dayjs(task.end_time).format('MM-DD-YYYY hh:mm A') : '-'}</TableCell>
+                  <TableCell>{task.total_time_spent ?? '-'}</TableCell>
                   <TableCell>{task.status}</TableCell>
                   <TableCell>
                     {task.status === 'In Progress' && task.user_id === currentUser.id && (
@@ -392,14 +401,14 @@ const TaskTable = ({ isBackdatedTab = false }) => {
             )}
           </TableBody>
         </Table>
-        <TablePagination
+        {/* <TablePagination
           component="div"
           count={tasks.length}
           page={page}
           onPageChange={(e, newPage) => setPage(newPage)}
           rowsPerPage={rowsPerPage}
           onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value)); setPage(0); }}
-        />
+        /> */}
       </TableContainer>
 
       {editTask && (
