@@ -87,7 +87,7 @@ const AddTaskModal = ({ open, handleClose, onTaskAdded, isBackdated, isEdit = fa
         start_time: editTaskData.start_time ? dayjs(editTaskData.start_time) : null,
         end_time: editTaskData.end_time ? dayjs(editTaskData.end_time) : null,
         reviewer_id: editTaskData.reviewer_id || '',
-        total_time_minutes: editTaskData.total_time_minutes || 0
+        total_time_spent: editTaskData.total_time_spent || 0
       });
     } else {
       setForm({
@@ -104,7 +104,7 @@ const AddTaskModal = ({ open, handleClose, onTaskAdded, isBackdated, isEdit = fa
         task_type: '',
         reviewer_id: '',
         status: isBackdated ? 'To Be Approved' : 'In Progress',
-        total_time_minutes: 0,
+        total_time_spent: 0,
       });
     }
 
@@ -128,7 +128,7 @@ const AddTaskModal = ({ open, handleClose, onTaskAdded, isBackdated, isEdit = fa
   const handleTimeChange = (field, value) => {
     const updated = { ...form, [field]: value };
     if (isBackdated && updated.start_time && updated.end_time) {
-      updated.total_time_minutes = calculateTotalTime(updated.start_time, updated.end_time);
+      updated.total_time_spent = calculateTotalTime(updated.start_time, updated.end_time);
     }
     setForm(updated);
   };
@@ -162,7 +162,7 @@ const AddTaskModal = ({ open, handleClose, onTaskAdded, isBackdated, isEdit = fa
         ? DateTime.fromJSDate(form.start_time.toDate()).toUTC().toISO()
         : nowUtc.toISO(),
       end_time: form.end_time ? DateTime.fromJSDate(form.end_time.toDate()).toUTC().toISO() : null,
-      total_time_minutes: isBackdated ? form.total_time_minutes : 0,
+      total_time_spent: isBackdated ? form.total_time_spent : 0,
       is_backdated: isBackdated,
       is_approved: false,
       status: isBackdated ? 'To Be Approved' : 'In Progress',
@@ -304,7 +304,7 @@ const AddTaskModal = ({ open, handleClose, onTaskAdded, isBackdated, isEdit = fa
             <InputLabel>Total Time (minutes)</InputLabel>
             <TextField
               fullWidth size="small"
-              value={form.total_time_minutes}
+              value={form.total_time_spent}
               InputProps={{ readOnly: true }}
               sx={{ mb: 2 }}
             />
